@@ -8,6 +8,7 @@ from pypinyin import pinyin
 import copy
 import json
 import os
+import re
 
 Dm_Code_List = []
 Config = {
@@ -75,17 +76,22 @@ def generate_new_rows(row, islast, old_names):
 
 
 # 单元格区间求和
-def cell_range_sum(cell_range):
+def cell_range_sum(cell_range, sheet):
     _sum = 0
     for cell in cell_range:
         if cell.value is None:
             break
-        if isinstance(cell.value, str):
+        if isinstance(cell.value, str) and cell.data_type != "f":
             _sum = cell.value
         else:
-            if cell.data_type == "f":  # 判断单元格是否为公式
-                cell.value = cell.calculate_value()
-            _sum += cell.value
+            _value = cell.value
+            if cell.data_type == "f":
+                pattern = r"\b([A-Z]\d+:[A-Z]\d+)\b"
+                # 搜索字符串中的正则表达式模式
+                match = re.search(pattern, cell.value)
+                _range = sheet[match.group(1)][0]
+                _value = cell_range_sum(_range, sheet)
+            _sum += _value
     return _sum
 
 
@@ -97,7 +103,7 @@ def find_dm_code(keyword):
 
 def parse_excel(file_path):
     # 加载Excel文件
-    wb = load_workbook(file_path)
+    wb = load_workbook(file_path, read_only=True)
     sheet = wb.active
     new_table_data = []
     column_data = []
@@ -116,7 +122,7 @@ def parse_excel(file_path):
             for col in column_data:
                 range_key = f"{col['start']}{rowIndex}:{col['end']}{rowIndex}"
                 cell_range = sheet[range_key][0]
-                col['value'] = cell_range_sum(cell_range)
+                col['value'] = cell_range_sum(cell_range, sheet)
                 # 转换部门 code
                 if isinstance(col['value'], str):
                     code = find_dm_code(col['value'])
@@ -178,7 +184,6 @@ def main():
     # 打开文件选择对话框，选择Excel文件
     file_path = filedialog.askopenfilename(filetypes=[("Excel Files", "*.xlsx")])
     table_data = parse_excel(file_path)
-
     print(f'new_table_data = {table_data}')
 
     # 创建一个新的工作簿
@@ -188,7 +193,8 @@ def main():
     ws = new_wb.active
 
     # 定义表头
-    headers = ["适用部门编号", "指标中文名称", "指标英文名称", "指标值", "指标单位", "百分比标志位", "适配层级", '父指标名称', '业务时间']
+    headers = ["适用部门编号", "指标中文名称", "指标英文名称", "指标值", "指标单位", "百分比标志位", "适配层级",
+               '父指标名称', '业务时间']
 
     # 写入表头
     ws.append(headers)
@@ -207,7 +213,7 @@ def main():
             ws.append(new_row)
 
     # 保存新的Excel文件
-    new_file_path = filedialog.asksaveasfilename(defaultextension="output.xlsx")
+    new_file_path = filedialog.asksaveasfilename(defaultextension=".xlsx")
     new_wb.save(new_file_path)
 
 
